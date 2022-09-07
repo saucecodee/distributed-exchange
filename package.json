@@ -1,0 +1,18 @@
+{
+  "name": "bfx-challenge",
+  "version": "0.0.0",
+  "author": "Ifedili Onyegbu",
+  "description": "The BFX challenge",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "start:grape-servers": "grape --dp 20001 --aph 30001 --bn '127.0.0.1:20001' & grape --dp 20002 --aph 40001 --bn '127.0.0.1:20002'",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "grenache-nodejs-http": "^0.7.12",
+    "grenache-nodejs-link": "^0.7.12",
+    "uuid": "^9.0.0"
+  }
+}
