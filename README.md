@@ -1,5 +1,5 @@
 # Distributed Exchange
-A distributed crypto exchange using the Grenache RCP framework.
+A distributed crypto exchange using the Bitfinex Grenache RCP framework.
 ## Installation
 
 - Run `npm i -g grenache-grape` to install grenache globally
@@ -8,11 +8,8 @@ A distributed crypto exchange using the Grenache RCP framework.
 ## Start up
 - Boot up two grape servers by running `yarn run start:grape-servers`
 - Spin up mutiple instance of the exchange by running `yarn start` on multiple terminals
-- Make orders by calling the `createOrder` function
+- Place orders by calling the `OrderBook.createOrder` function
 
-## Features
 
-## What's missing?
+## ToDo
 - 
-
-## Limitations

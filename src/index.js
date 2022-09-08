@@ -7,6 +7,7 @@ const { OrderType, Order } = require("./models")
 const port = 1024 + Math.floor(Math.random() * 1000)
 config.setPort = port
 
+
 //=======================================================//
 //  Server configuration
 //=======================================================//
@@ -21,6 +22,7 @@ serverPeer.init()
 
 const service = serverPeer.transport('server')
 service.listen(port)
+console.log(`⏳ ${port} :: Service is running`)
 
 setInterval(function () {
   serverLink.announce("order-book", service.port, {})
@@ -29,7 +31,7 @@ setInterval(function () {
 service.on('request', async (rid, key, payload, handler) => {
   if (payload.from === port) return;
   console.log(`📥 ${port} :: Incomming ${payload.action.toUpperCase()} request from ${payload.from}`)
-  await OrderBook.handler(payload, handler.reply)
+  await OrderBook.requestHandler(payload, handler.reply)
 })
 
 
@@ -46,34 +48,48 @@ config.setClientPeer = clientPeer
 clientPeer.init()
 
 
-console.log(`⏳ ${port} :: Service is running}`)
-
-
 //=======================================================//
-//  Start Matching Orders
+//  Initalize Order Matching
 //=======================================================//
 setTimeout(async () => {
-  await OrderBook.init()
+  await OrderBook.initializeOrderMatching()
 }, 1000);
 
-
+process.on("uncaughtException", err => {
+  console.error(`⏳ ${port} ::  Service exiting the network: ${err}`);
+  throw err
+  process.exit(1)
+});
 
 
 //=======================================================//
-//  
+//  Order functions
 //=======================================================//
+// Place Order
 setTimeout(async () => {
   await OrderBook.createOrder(new Order({
     price: 200,
     qty: 4,
     type: OrderType.SELL,
   }))
+  await OrderBook.createOrder(new Order({
+    price: 250,
+    qty: 2,
+    type: OrderType.SELL,
+  }))
+  await OrderBook.createOrder(new Order({
+    price: 350,
+    qty: 2,
+    type: OrderType.BUY,
+  }))
+  await OrderBook.createOrder(new Order({
+    price: 250,
+    qty: 5,
+    type: OrderType.BUY,
+  }))
 }, 3000);
 
-
-
-process.on("uncaughtException", err => {
-  console.error(`⏳ ${port} ::  Service exiting the network: ${err}`);
-  // throw err
-  process.exit(1)
-});
+// Debug: check DB state every 10 secs
+setInterval(() => {
+  console.log("DB atm", config.getDB)
+}, 10000);
