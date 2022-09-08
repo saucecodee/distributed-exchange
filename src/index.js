@@ -1,11 +1,11 @@
-const { promisify } = require('util')
 const { PeerRPCServer, PeerRPCClient } = require('grenache-nodejs-http')
 const Link = require('grenache-nodejs-link')
-const OrderBook = require("./order-book")
-const MatchingEngine = require("./matching-engine")
 const config = require("./config")
+const OrderBook = require("./order-book")
+const { OrderType, Order } = require("./models")
+
 const port = 1024 + Math.floor(Math.random() * 1000)
-config.setPort(port)
+config.setPort = port
 
 //=======================================================//
 //  Server configuration
@@ -16,19 +16,20 @@ const serverLink = new Link({
 serverLink.start()
 
 const serverPeer = new PeerRPCServer(serverLink, { timeout: 300000 })
+config.setServerPeer = serverPeer
 serverPeer.init()
 
 const service = serverPeer.transport('server')
 service.listen(port)
 
 setInterval(function () {
-  serverLink.announce('order-book', service.port, {})
+  serverLink.announce("order-book", service.port, {})
 }, 1000)
 
-service.on('request', (rid, key, payload, handler) => {
-  console.log({ payload })
+service.on('request', async (rid, key, payload, handler) => {
   if (payload.from === port) return;
-  OrderBook.handler(payload, handler.reply)
+  console.log(`📥 ${port} :: Incomming ${payload.action.toUpperCase()} request from ${payload.from}`)
+  await OrderBook.handler(payload, handler.reply)
 })
 
 
@@ -41,13 +42,19 @@ const clientLink = new Link({
 clientLink.start()
 
 const clientPeer = new PeerRPCClient(clientLink, {})
+config.setClientPeer = clientPeer
 clientPeer.init()
 
 
+console.log(`⏳ ${port} :: Service is running}`)
+
+
 //=======================================================//
-//  Initialize Matching Engine
+//  Start Matching Orders
 //=======================================================//
-MatchingEngine.init()
+setTimeout(async () => {
+  await OrderBook.init()
+}, 1000);
 
 
 
@@ -55,8 +62,18 @@ MatchingEngine.init()
 //=======================================================//
 //  
 //=======================================================//
- OrderBook.createOrder(new OrderBook.Order({ 
-  price: 200, 
-  qty: 4, 
-  type: config.orderTypes.SELL 
-}))
+setTimeout(async () => {
+  await OrderBook.createOrder(new Order({
+    price: 200,
+    qty: 4,
+    type: OrderType.SELL,
+  }))
+}, 3000);
+
+
+
+process.on("uncaughtException", err => {
+  console.error(`⏳ ${port} ::  Service exiting the network: ${err}`);
+  // throw err
+  process.exit(1)
+});
