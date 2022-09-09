@@ -1,229 +1,270 @@
-const config = require("./config");
 const { OrderAction, OrderType, OrderStatus } = require("./models")
 
-
-async function syncDB() {
-  const res = await sendMessage(OrderAction.GET_ORDERS, {})
-  if (!res || !res.success) return
-  console.log("🚀 Syc DB", res)
-  config.setDB = res.data[0]
-}
-
-async function createOrder(data) {
-  const DB = config.getDB
-  const { type = null, id = null } = data
-  if (!DB[type] || DB[type][id]) return { success: false }
-  DB[type][id] = data
-  config.setDB = DB
-  await sendMessage(OrderAction.CREATE_ORDER, data)
-  return { success: true }
-}
-
-function createPartialOrder(partialOrder, fillOrder) {
-  partialOrder.qty = partialOrder.qty - fillOrder.qty
-  partialOrder.status = OrderStatus.PARTIAL
-  updateOrder({ data: partialOrder })
-  deleteOrder({ data: fillOrder })
-  return { success: true }
-}
-
-
-//=======================================================//
-//  Request handlers
-//=======================================================//
-function getOrders(payload, reply = () => { }) {
-  reply(null, { data: config.getDB, success: true });
-  return config.getDB
-}
-
-function newOrder(payload, reply = () => { }) {
-  const DB = config.getDB
-  const { type = null, id = null } = payload.data
-  if (!DB[type] || DB[type][id]) {
-    reply(null, { success: false });
-    return
+class OrderBook {
+  DB = {
+    buy: {},
+    sell: {},
   }
-  DB[type][id] = payload.data
-  config.setDB = DB
-  reply(null, { success: true });
-}
+  clientPeer = null
+  serverPeer = null
 
-function lockOrder(payload, reply = () => { }) {
-  const DB = config.getDB
-  const { type = null, id = null } = payload.data
-  if (!DB[type] || !DB[type][id] || DB[type][id].isLocked) {
-    reply(null, { success: false });
-    return
+  constructor({ port }) {
+    this.port = port
   }
-  DB[type][id].isLocked = true
-  DB[type][id].lockedBy = payload.from
-  config.setDB = DB
-  reply(null, { success: true });
-}
 
-function unlockOrder(payload, reply = () => { }) {
-  const DB = config.getDB
-  if (!validateOrderRequest(payload).success)
-    return { success: false }
-  const { type, id } = payload.data
-  DB[type][id].isLocked = false
-  DB[type][id].lockedBy = undefined
-  config.setDB = DB
-  reply(null, { success: true });
-}
-
-function deleteOrder(payload, reply = () => { }) {
-  const DB = config.getDB
-  if (!validateOrderRequest(payload).success)
-    return { success: false }
-  const { type, id } = payload.data
-  delete DB[type][id]
-  config.setDB = DB
-
-  reply(null, { success: true });
-}
-
-function updateOrder(payload, reply = () => { }) {
-  const DB = config.getDB
-  if (!validateOrderRequest(payload).success)
-    return { success: false }
-  const { type, id } = payload.data
-
-  DB[type][id] = payload.data
-  config.setDB = DB
-  reply(null, { success: true });
-}
-
-async function sendMessage(action, data) {
-  const from = config.getPort;
-  const clientPeer = config.getClientPeer;
-
-  console.log(`📝 ${from} :: Sending ${action.toUpperCase()} action for ${data.id ? data.id.slice(0, 8) : "N/A"}`)
-  try {
-    const respone = await new Promise((resolve, reject) => {
-      clientPeer.map("order-book", { action, from, data }, { timeout: 10000 }, (err, res) => {
-        if (err) {
-          reject(err)
-          // console.log("Unnable to send message :: ", err)
-        }
-        resolve(res)
-        // console.log("🚨", { Message_Reply: data[0], data })
-      });
-    })
-
-    return { data: respone, success: true }
-  } catch (error) {
-    return { success: false }
+  setClientPeer(clientPeer) {
+    this.clientPeer = clientPeer
   }
-};
 
-function validateOrderRequest(payload) {
-  const DB = config.getDB
-  const { type = null, id = null } = payload.data
-
-  if (!DB[type] || !DB[type][id])
-    return { success: false }
-
-  if (DB[type][id].isLocked && DB[type][id].lockedBy != payload.from)
-    return { success: false }
-
-  return { success: true }
-}
-
-async function requestHandler(payload, reply) {
-  switch (payload.action) {
-    case OrderAction.CREATE_ORDER:
-      newOrder(payload, reply)
-      break;
-    case OrderAction.GET_ORDERS:
-      getOrders(payload, reply)
-      break;
-    case OrderAction.LOCK_ORDER:
-      lockOrder(payload, reply)
-      break;
-    case OrderAction.UNLOCK_ORDER:
-      unlockOrder(payload, reply)
-      break;
-    case OrderAction.FILL_ORDER:
-      deleteOrder(payload, reply)
-      break;
-    case OrderAction.PARTIAL_ORDER:
-      updateOrder(payload, reply)
-      break;
-    case OrderAction.CANCEL_ORDER:
-      deleteOrder(payload, reply)
-      break;
-    default:
-      console.log(`🚫 ${port} :: Invalid requestH`, payload.action);
+  setServerPeer(serverPeer) {
+    this.serverPeer = serverPeer
   }
-}
 
-async function initializeOrderMatching() {
-  // stay in sync with other Grapes DB 
-  await syncDB()
-
-  // Check the DB for potential matches in 1sec interval 
-  console.log(`🔦 ${config.getPort} :: Checking for potential matches...`)
-  setInterval(async () => {
-    const DB = config.getDB
-
-    // Get the best available buy order 
-    let bestBuyOrder
-    for (const id in DB[OrderType.BUY]) {
-      const buyOrder = DB[OrderType.BUY][id]
-      if (!bestBuyOrder || bestBuyOrder.price < buyOrder.price || buyOrder.isLocked)
-        bestBuyOrder = buyOrder
+  async syncOrderBook() {
+    const res = await this.sendMessage(OrderAction.GET_ORDERS, {})
+    if (!res || !res.success)
+      return { success: false }
+    for (let i = 0; i < res.data.length; i++) {
+      if (res.data[i].data) {
+        this.DB = res.data[i].data
+        break;
+      }
     }
+    console.log(`\n⚪️ ${this.port} :: ORDER BOOK ${JSON.stringify(this.DB, null, 2)}`)
 
-    // Get the best available sell order 
-    let bestSellOrder
-    for (const id in DB[OrderType.SELL]) {
-      const sellOrder = DB[OrderType.SELL][id]
-      if (!bestSellOrder || bestSellOrder.price > sellOrder.price || sellOrder.isLocked)
-        bestSellOrder = sellOrder
-    }
+    return { success: true }
+  }
 
-    // Check if there is a potential macthes
-    if (!bestBuyOrder || !bestSellOrder) return
-    if (bestBuyOrder.price < bestSellOrder.price) return
+  async createOrder(data) {
+    const { type = null, id = null } = data
+    if (!this.DB[type] || this.DB[type][id]) return { success: false }
+    this.DB[type][id] = data
+    await this.sendMessage(OrderAction.CREATE_ORDER, data)
+    return { success: true, data }
+  }
 
-    console.log(`\n =================================================== \n \n🚨 ${config.getPort} :: Fund Order match  @ ${new Date().toISOString()}\n`)
-    // Lock the both Orders
-    await sendMessage(OrderAction.LOCK_ORDER, bestBuyOrder)
-    await sendMessage(OrderAction.LOCK_ORDER, bestSellOrder)
+  async cancelOrder(payload, reply = () => { }, isRemoteCall) {
+    if (payload.from != this.port)
+      this.deleteOrder(payload)
+    if (isRemoteCall)
+      await this.sendMessage(OrderAction.CANCEL_ORDER, payload.data)
 
-    // console.log(`\nORDERS DB:`, getOrders(), "\n")
-    console.log("\n")
-    console.log(`:: SELL ORDER:`, bestSellOrder)
-    console.log(`\n:: BUY ORDER:`, bestBuyOrder)
-    console.log("\n")
+    reply(null, { success: true });
+    return { success: true }
+  }
 
-    if (bestBuyOrder.qty != bestSellOrder.qty) {
-      const buyIsgreater = bestBuyOrder.qty > bestSellOrder.qty
+  async logOrderBook(payload, reply = () => { }, isRemoteCall) {
+    if (isRemoteCall)
+      await this.sendMessage(OrderAction.LOG_ORDER_BOOK)
+    if (!payload || payload.from != this.port)
+      console.log(`\n⚪️ ${this.port} :: ORDER BOOK ${JSON.stringify(this.DB, null, 2)}`)
 
-      const partialOrder = buyIsgreater ? bestBuyOrder : bestSellOrder;
-      const fillOrder = buyIsgreater ? bestSellOrder : bestBuyOrder;
-      createPartialOrder(partialOrder, fillOrder)
-      await sendMessage(OrderAction.FILL_ORDER, fillOrder)
-      await sendMessage(OrderAction.PARTIAL_ORDER, partialOrder)
-      await sendMessage(OrderAction.UNLOCK_ORDER, partialOrder)
+    reply(null, { success: true })
+    return { success: true }
+  }
 
+  createPartialOrder(partialOrder, fillOrder) {
+    partialOrder.qty = partialOrder.qty - fillOrder.qty
+    partialOrder.status = OrderStatus.PARTIAL
+    this.updateOrder({ data: partialOrder })
+    this.deleteOrder({ data: fillOrder })
+    return { success: true }
+  }
+
+  getOrder({ type, id }) {
+    if (!this.DB[type] || !this.DB[type][id])
+      return { success: false }
+    return { success: true, data: this.DB[type][id] }
+  }
+
+  getOrderBook(payload, reply = () => { }) {
+    if (payload.from == this.port) {
+      reply(null, { data: null, success: true });
     } else {
-      deleteOrder({ data: bestBuyOrder })
-      deleteOrder({ data: bestSellOrder })
-      await sendMessage(OrderAction.FILL_ORDER, bestBuyOrder)
-      await sendMessage(OrderAction.FILL_ORDER, bestSellOrder)
+      reply(null, { data: this.DB, success: true });
     }
-    console.log(`\n ------------------ ORDER EXECUTED -----------------\n`)
-  }, 2000);
-}
 
-module.exports = {
-  initializeOrderMatching,
-  requestHandler,
-  createOrder,
-  syncDB,
-  getOrders
+    return { data: this.DB, success: true }
+  }
+
+  newOrder(payload, reply = () => { }) {
+    const { type = null, id = null } = payload.data
+    if (!this.DB[type] || this.DB[type][id]) {
+      reply(null, { success: false });
+      return
+    }
+    this.DB[type][id] = payload.data
+    reply(null, { success: true });
+  }
+
+  lockOrder(payload, reply = () => { }) {
+    const { type = null, id = null } = payload.data
+    if (!this.DB[type] || !this.DB[type][id] || this.DB[type][id].isLocked) {
+      reply(null, { success: false });
+      return
+    }
+    this.DB[type][id].isLocked = true
+    this.DB[type][id].lockedBy = payload.from
+    reply(null, { success: true });
+  }
+
+  unlockOrder(payload, reply = () => { }) {
+    if (!this.validateOrderRequest(payload).success)
+      return { success: false }
+    const { type, id } = payload.data
+    this.DB[type][id].isLocked = false
+    this.DB[type][id].lockedBy = undefined
+    reply(null, { success: true });
+  }
+
+  deleteOrder(payload, reply = () => { }) {
+    if (!this.validateOrderRequest(payload).success)
+      return { success: false }
+    const { type, id } = payload.data
+    delete this.DB[type][id]
+    reply(null, { success: true });
+  }
+
+  updateOrder(payload, reply = () => { }) {
+    if (!this.validateOrderRequest(payload).success)
+      return { success: false }
+    const { type, id } = payload.data
+
+    this.DB[type][id] = payload.data
+    reply(null, { success: true });
+  }
+
+  async sendMessage(action, data = {}) {
+    console.log(`\n🟢 ${this.port} :: Outgoing ${action.toUpperCase()}${data.id ? " for " + data.id.slice(0, 8) : ""}`)
+    try {
+      const respone = await new Promise((resolve, reject) => {
+        this.clientPeer.map("exchange", { action, from: this.port, data }, { timeout: 10000 }, (err, res) => {
+          if (err) {
+            return reject(err)
+          }
+          return resolve(res)
+        });
+      })
+
+      // console.log(respone)
+      return { data: respone, success: true }
+    } catch (error) {
+      console.log("Unnable to send message :: ", error)
+      return { success: false }
+    }
+  };
+
+  validateOrderRequest(payload) {
+    const { type = null, id = null } = payload.data
+
+    if (!this.DB[type] || !this.DB[type][id])
+      return { success: false }
+
+    if (this.DB[type][id].isLocked && this.DB[type][id].lockedBy != payload.from)
+      return { success: false }
+
+    return { success: true }
+  }
+
+  async requestHandler(payload, reply) {
+    switch (payload.action) {
+      case OrderAction.CREATE_ORDER:
+        this.newOrder(payload, reply)
+        break;
+      case OrderAction.GET_ORDERS:
+        this.getOrderBook(payload, reply)
+        break;
+      case OrderAction.LOCK_ORDER:
+        this.lockOrder(payload, reply)
+        break;
+      case OrderAction.UNLOCK_ORDER:
+        this.unlockOrder(payload, reply)
+        break;
+      case OrderAction.FILL_ORDER:
+        this.deleteOrder(payload, reply)
+        break;
+      case OrderAction.PARTIAL_ORDER:
+        this.updateOrder(payload, reply)
+        break;
+      case OrderAction.CANCEL_ORDER:
+        this.deleteOrder(payload, reply)
+        break;
+      case OrderAction.LOG_ORDER_BOOK:
+        this.logOrderBook(payload, reply)
+        break;
+      default:
+        console.log(`🚫 ${port} :: Invalid requestH`, payload.action);
+    }
+  }
+
+  async initializeOrderMatching() {
+    // Stay in sync with other Grapes DB 
+    const sync = await this.syncOrderBook()
+    if (!sync.success) throw new Error("Unable to sycn order book")
+
+    // Check the DB for potential matches in 1sec interval 
+    console.log(`\n🚨  ${this.port} :: Order matcher is running...`)
+    setInterval(async () => {
+      // Get the best available buy order 
+      let bestBuyOrder
+      for (const id in this.DB[OrderType.BUY]) {
+        const buyOrder = this.DB[OrderType.BUY][id]
+        if (!bestBuyOrder || bestBuyOrder.price < buyOrder.price || buyOrder.isLocked)
+          bestBuyOrder = buyOrder
+      }
+      // Get the best available sell order 
+      let bestSellOrder
+      for (const id in this.DB[OrderType.SELL]) {
+        const sellOrder = this.DB[OrderType.SELL][id]
+        if (!bestSellOrder || bestSellOrder.price > sellOrder.price || sellOrder.isLocked)
+          bestSellOrder = sellOrder
+      }
+
+      // Check if there is a potential macthes
+      if (!bestBuyOrder || !bestSellOrder) return
+      if (bestBuyOrder.price < bestSellOrder.price) return
+
+      console.log(`\n =================================================== \n \n🚨 ${this.port} :: Fund Order match  @ ${new Date().toISOString()}`)
+      // Lock the both Orders
+      const lockSellOrder = await this.sendMessage(OrderAction.LOCK_ORDER, bestSellOrder)
+      const lockBuyorder = await this.sendMessage(OrderAction.LOCK_ORDER, bestBuyOrder)
+
+      let lockStatus = true
+      for (let i = 0; i < lockSellOrder.length; i++) {
+        lockStatus = lockSellOrder[i].success && lockBuyorder[i].success
+        if (!lockStatus) {
+          await this.sendMessage(OrderAction.UNLOCK_ORDER, bestSellOrder)
+          await this.sendMessage(OrderAction.UNLOCK_ORDER, bestBuyOrder)
+          break;
+        }
+      }
+
+
+      // console.log(`\nORDERS DB:`, getOrderBook().data, "\n")
+      console.log(`\n⚪️ ${this.port} :: SELL ORDER ::`, bestSellOrder)
+      console.log(`\n⚪️ ${this.port} :: BUY ORDER ::`, bestBuyOrder)
+
+      if (bestBuyOrder.qty != bestSellOrder.qty) {
+        const buyIsgreater = bestBuyOrder.qty > bestSellOrder.qty
+
+        const partialOrder = buyIsgreater ? bestBuyOrder : bestSellOrder;
+        const fillOrder = buyIsgreater ? bestSellOrder : bestBuyOrder;
+        this.createPartialOrder(partialOrder, fillOrder)
+        await this.sendMessage(OrderAction.FILL_ORDER, fillOrder)
+        await this.sendMessage(OrderAction.PARTIAL_ORDER, partialOrder)
+        await this.sendMessage(OrderAction.UNLOCK_ORDER, partialOrder)
+
+      } else {
+        this.deleteOrder({ data: bestBuyOrder })
+        this.deleteOrder({ data: bestSellOrder })
+        await this.sendMessage(OrderAction.FILL_ORDER, bestBuyOrder)
+        await this.sendMessage(OrderAction.FILL_ORDER, bestSellOrder)
+      }
+      console.log(`\n ------------------ ORDER EXECUTED -----------------\n`)
+    }, 2000);
+  }
+
 }
+module.exports = OrderBook
 
 

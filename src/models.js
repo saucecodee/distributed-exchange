@@ -30,6 +30,7 @@ const OrderAction = {
   FILL_ORDER: "fill-order",
   PARTIAL_ORDER: "partial-order",
   CANCEL_ORDER: "cancel-order",
+  LOG_ORDER_BOOK: "log-order-book"
 }
 
 module.exports = {
