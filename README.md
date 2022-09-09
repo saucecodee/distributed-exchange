@@ -2,20 +2,22 @@
 
 A distributed exchange built on the Bitfinex Grenache RCP framework.
 
+![Diagram of distributed exchange](./distributed-exchange.png)
+
 ## Installation
 
-- Run `npm i -g grenache-grape` to install grenache globally
-- Then pull this repo and run `yarn install`
+- Pull/download this repo, in the project directory run `yarn install`
+- Then run `npm i -g grenache-grape` to install grenache globally
 
 ## Usage
 
 - Boot up two grape servers by running `yarn start:grape-servers`
 - Run `yarn start:exchange` on multiple terminals to create different instances of the exchnage.
-- Each exchange instance provides an API service for interacting with the RPC client. The API and exchange instance ports are auto generated and will be displayed on the terminal.
+- Each exchange instance provides an API service for interacting with the Client Peer. The API and Server Peer ports are auto generated and will be displayed on the terminal when the exchange is initiated.
 
 ## API
 
-Here are the API endpoints for interacting with the RPC client.
+Here are the API endpoints for interacting with the Client Peer.
 
 ### Get Order Book
 
