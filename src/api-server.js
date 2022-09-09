@@ -1,6 +1,6 @@
 require("express-async-errors")
 const express = require('express')
-const { Order, OrderAction } = require('./models')
+const { Order, OrderAction } = require('./schema')
 const app = express()
 const port = 1024 + Math.floor(Math.random() * 1000)
 
@@ -9,7 +9,7 @@ class AppError extends Error { }
 module.exports = (orderBook) => {
   app.use(express.json());
   app.use((req, res, next) => {
-    console.log(`\n🔵 ${port} :: ${req.method.toUpperCase()} ${req.originalUrl} ${Number(res.statusCode)}`)
+    console.log(`\n🔵 ${port} :: ${req.method.toUpperCase()} ${req.originalUrl}`)
     next();
   });
 
@@ -52,9 +52,8 @@ module.exports = (orderBook) => {
     res.status(200).send({ success: true })
   })
 
-
   app.use("*", (req, res) => {
-    res.status(404).send({ success: false, message: error.message })
+    res.status(404).send({ success: false, message: "Invalid route" })
   });
 
   app.use((error, req, res, next) => {
@@ -67,10 +66,7 @@ module.exports = (orderBook) => {
     }
   });
 
-
   app.listen(port, () => {
     console.log(`\n🔵 ${port} :: API service is running...`)
   })
-
-
 } 

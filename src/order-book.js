@@ -1,4 +1,4 @@
-const { OrderAction, OrderType, OrderStatus } = require("./models")
+const { OrderAction, OrderType, OrderStatus } = require("./schema")
 
 class OrderBook {
   DB = {
@@ -196,75 +196,8 @@ class OrderBook {
         console.log(`🚫 ${port} :: Invalid requestH`, payload.action);
     }
   }
-
-  async initializeOrderMatching() {
-    // Stay in sync with other Grapes DB 
-    const sync = await this.syncOrderBook()
-    if (!sync.success) throw new Error("Unable to sycn order book")
-
-    // Check the DB for potential matches in 1sec interval 
-    console.log(`\n🚨  ${this.port} :: Order matcher is running...`)
-    setInterval(async () => {
-      // Get the best available buy order 
-      let bestBuyOrder
-      for (const id in this.DB[OrderType.BUY]) {
-        const buyOrder = this.DB[OrderType.BUY][id]
-        if (!bestBuyOrder || bestBuyOrder.price < buyOrder.price || buyOrder.isLocked)
-          bestBuyOrder = buyOrder
-      }
-      // Get the best available sell order 
-      let bestSellOrder
-      for (const id in this.DB[OrderType.SELL]) {
-        const sellOrder = this.DB[OrderType.SELL][id]
-        if (!bestSellOrder || bestSellOrder.price > sellOrder.price || sellOrder.isLocked)
-          bestSellOrder = sellOrder
-      }
-
-      // Check if there is a potential macthes
-      if (!bestBuyOrder || !bestSellOrder) return
-      if (bestBuyOrder.price < bestSellOrder.price) return
-
-      console.log(`\n =================================================== \n \n🚨 ${this.port} :: Fund Order match  @ ${new Date().toISOString()}`)
-      // Lock the both Orders
-      const lockSellOrder = await this.sendMessage(OrderAction.LOCK_ORDER, bestSellOrder)
-      const lockBuyorder = await this.sendMessage(OrderAction.LOCK_ORDER, bestBuyOrder)
-
-      let lockStatus = true
-      for (let i = 0; i < lockSellOrder.length; i++) {
-        lockStatus = lockSellOrder[i].success && lockBuyorder[i].success
-        if (!lockStatus) {
-          await this.sendMessage(OrderAction.UNLOCK_ORDER, bestSellOrder)
-          await this.sendMessage(OrderAction.UNLOCK_ORDER, bestBuyOrder)
-          break;
-        }
-      }
-
-
-      // console.log(`\nORDERS DB:`, getOrderBook().data, "\n")
-      console.log(`\n⚪️ ${this.port} :: SELL ORDER ::`, bestSellOrder)
-      console.log(`\n⚪️ ${this.port} :: BUY ORDER ::`, bestBuyOrder)
-
-      if (bestBuyOrder.qty != bestSellOrder.qty) {
-        const buyIsgreater = bestBuyOrder.qty > bestSellOrder.qty
-
-        const partialOrder = buyIsgreater ? bestBuyOrder : bestSellOrder;
-        const fillOrder = buyIsgreater ? bestSellOrder : bestBuyOrder;
-        this.createPartialOrder(partialOrder, fillOrder)
-        await this.sendMessage(OrderAction.FILL_ORDER, fillOrder)
-        await this.sendMessage(OrderAction.PARTIAL_ORDER, partialOrder)
-        await this.sendMessage(OrderAction.UNLOCK_ORDER, partialOrder)
-
-      } else {
-        this.deleteOrder({ data: bestBuyOrder })
-        this.deleteOrder({ data: bestSellOrder })
-        await this.sendMessage(OrderAction.FILL_ORDER, bestBuyOrder)
-        await this.sendMessage(OrderAction.FILL_ORDER, bestSellOrder)
-      }
-      console.log(`\n ------------------ ORDER EXECUTED -----------------\n`)
-    }, 2000);
-  }
-
 }
+
 module.exports = OrderBook
 
 
