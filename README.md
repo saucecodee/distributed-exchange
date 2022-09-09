@@ -1,6 +1,6 @@
 # Distributed Exchange
 
-A distributed crypto exchange using the Bitfinex Grenache RCP framework.
+A distributed exchange built on the Bitfinex Grenache RCP framework.
 
 ## Installation
 
@@ -11,28 +11,31 @@ A distributed crypto exchange using the Bitfinex Grenache RCP framework.
 
 - Boot up two grape servers by running `yarn start:grape-servers`
 - Run `yarn start:exchange` on multiple terminals to create different instances of the exchnage.
+- Each exchange instance provides an API service for interacting with the RPC client. The API and exchange instance ports are auto generated and will be displayed on the terminal.
 
 ## API
 
-Here are the available API endpoints for interacting with the RPC client.
+Here are the API endpoints for interacting with the RPC client.
 
 ### Get Order Book
 
-Get all orders
+Displays all orders in the exchange's order book.
 
 ```
 curl -X GET 'localhost:[port]/order-book/'
 ```
 
-### Get One Order
+### Get Order
 
-Get one order type by id
+Get one order type by the order id
 
 ```
 curl -X GET 'localhost:[port]/order-book/["buy" | "sell"]/[order id]'
 ```
 
 ### Create Order
+
+Create new order on the exchange instance.
 
 ```
 curl -X POST \
@@ -47,7 +50,7 @@ curl -X POST \
 
 ### Cancel Order
 
-Cancel an Order and remove it from the order book.
+Cancel an order and remove it from the exchange's order book.
 
 ```
 curl -X POST \
@@ -66,3 +69,9 @@ Tell all exchange instances to log the current state of thier order book.
 ```
 curl -X POST 'localhost:1800/order-book/log'
 ```
+
+## Features
+- Create orders
+- Cancel orders
+- Automated order matching
+- Handles race condition between distributed exchange instances
